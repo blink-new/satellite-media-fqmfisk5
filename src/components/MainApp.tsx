@@ -190,9 +190,13 @@ export default function MainApp({ user }: MainAppProps) {
 
         // Get all likes for the current user to check which posts they liked
         try {
-          const userLikes = await blink.db.likes.list({
-            where: { userId: user.id }
+          // Use a more specific query to avoid the malformed URL issue
+          const allLikes = await blink.db.likes.list({
+            limit: 1000 // Get a reasonable number of likes
           })
+          
+          // Filter likes for current user on the client side
+          const userLikes = allLikes.filter(like => like.userId === user.id)
           
           // Update the isLiked status for each post
           const postsWithLikes = postsWithUsers.map(post => ({
@@ -201,8 +205,8 @@ export default function MainApp({ user }: MainAppProps) {
           }))
           
           setPosts(postsWithLikes)
-        } catch (error) {
-          console.error('Error loading likes:', error)
+        } catch (likesError) {
+          console.error('Error loading likes:', likesError)
           // If likes loading fails, just show posts without like status
           setPosts(postsWithUsers)
         }
@@ -260,12 +264,15 @@ export default function MainApp({ user }: MainAppProps) {
   const handleLikePost = async (postId: string, isCurrentlyLiked: boolean) => {
     try {
       if (isCurrentlyLiked) {
-        // Unlike - get all likes for this user and find the one for this post
-        const userLikes = await blink.db.likes.list({
-          where: { userId: user.id }
+        // Unlike - get all likes and find the one for this user and post
+        const allLikes = await blink.db.likes.list({
+          limit: 1000 // Get a reasonable number of likes
         })
         
-        const likeToDelete = userLikes.find(like => like.postId === postId)
+        const likeToDelete = allLikes.find(like => 
+          like.userId === user.id && like.postId === postId
+        )
+        
         if (likeToDelete) {
           await blink.db.likes.delete(likeToDelete.id)
         }
@@ -278,9 +285,9 @@ export default function MainApp({ user }: MainAppProps) {
           })
         }
       } else {
-        // Like
+        // Like - create new like
         await blink.db.likes.create({
-          id: `like_${Date.now()}`,
+          id: `like_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           userId: user.id,
           postId: postId
         })
