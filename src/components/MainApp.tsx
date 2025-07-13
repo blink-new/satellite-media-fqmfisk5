@@ -176,17 +176,6 @@ export default function MainApp({ user }: MainAppProps) {
               limit: 1
             })
             
-            // Check if current user liked this post
-            const likes = await blink.db.likes.list({
-              where: { 
-                AND: [
-                  { userId: user.id },
-                  { postId: post.id }
-                ]
-              },
-              limit: 1
-            })
-
             return {
               ...post,
               user: postUser[0] ? {
@@ -194,12 +183,29 @@ export default function MainApp({ user }: MainAppProps) {
                 username: postUser[0].username || postUser[0].email.split('@')[0],
                 avatarUrl: postUser[0].avatarUrl
               } : undefined,
-              isLiked: likes.length > 0
+              isLiked: false // Will be updated below
             }
           })
         )
 
-        setPosts(postsWithUsers)
+        // Get all likes for the current user to check which posts they liked
+        try {
+          const userLikes = await blink.db.likes.list({
+            where: { userId: user.id }
+          })
+          
+          // Update the isLiked status for each post
+          const postsWithLikes = postsWithUsers.map(post => ({
+            ...post,
+            isLiked: userLikes.some(like => like.postId === post.id)
+          }))
+          
+          setPosts(postsWithLikes)
+        } catch (error) {
+          console.error('Error loading likes:', error)
+          // If likes loading fails, just show posts without like status
+          setPosts(postsWithUsers)
+        }
       } catch (error) {
         console.error('Error loading posts:', error)
       } finally {
@@ -254,21 +260,16 @@ export default function MainApp({ user }: MainAppProps) {
   const handleLikePost = async (postId: string, isCurrentlyLiked: boolean) => {
     try {
       if (isCurrentlyLiked) {
-        // Unlike
-        const likes = await blink.db.likes.list({
-          where: { 
-            AND: [
-              { userId: user.id },
-              { postId: postId }
-            ]
-          },
-          limit: 1
+        // Unlike - get all likes for this user and find the one for this post
+        const userLikes = await blink.db.likes.list({
+          where: { userId: user.id }
         })
         
-        if (likes.length > 0) {
-          await blink.db.likes.delete(likes[0].id)
+        const likeToDelete = userLikes.find(like => like.postId === postId)
+        if (likeToDelete) {
+          await blink.db.likes.delete(likeToDelete.id)
         }
-
+        
         // Update post likes count
         const post = posts.find(p => p.id === postId)
         if (post) {
@@ -504,7 +505,7 @@ export default function MainApp({ user }: MainAppProps) {
                         </div>
                       )}
                       
-                      <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                      <div className="flex items-center justify-between pt-3 border-t">
                         <Button
                           variant="ghost"
                           size="sm"
